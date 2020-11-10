@@ -1,0 +1,92 @@
+---
+title: "STATS415 Final Group Project"
+author: "Final Group 42"
+date: "Due Date: 11:59pm on Dec 3"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r imports, include=F}
+library(dplyr)
+library(FNN)
+library(ggplot2)
+```
+
+# Overview
+
+In this project, you will apply what we have learned in STATS 415 to build predictive models based on a real financial dataset. The main goal is to predict the forward return of a target asset (Asset 1) based on the historical price series of the target asset and other two assets (Asset 2 and Asset 3). You will be given minutely prices of the three assets over a year, which correspond to T = 524, 160 rows in the csv file we provided.  
+The project has two parts: a basic part and an advanced part:
+
+
+• In the basic part, there are six problems, each worth 10 points and having standard solutions. Two problems require you to submit your outputs to Canvas, which are then assessed by our Online Judge (OJ). The other problems require you to present your analysis and results in your project report, which are graded manually.
+
+
+• The advanced part is worth 40 points. There you are given full freedom to build your predictive models. You need to submit a prediction function to Canvas; then our OJ will assess and report its performance on a testing dataset that is withheld from you. The ranking of a team depends on the out-of-sample correlation r of their model. You will receive 10 points as long as your team makes a valid submission and will receive full points once r ≥ 4%. We will consider giving extra bonus points to top teams depending on their performance. The specific details of the bonus points will be given after the final project is due.
+
+
+Everyone within a team receives the same score for the final project and can submit results or code to the OJ for the entire team. Each OJ-graded problem allows THREE submissions per day per team, and only the highest score will be counted toward the grade. Therefore, please start early and exploit every opportunity to hit a higher score! During the final project, you will be updated with your team’s current ranking based on your state-of-the-art result every 24 hours.
+
+# Basic Part
+
+## Backward returns
+
+For any $t$, $h \in N_+$, define the $h$-min backward return at time $t$ as:
+
+$$ rb(t, h) := \frac{s(t) − s(\max(t − h, 1))}{ s(\max(t − h, 1))} $$
+
+where $s(t)$ denotes the price at time t. Load final project.csv in R. Calculate the 3-min, 10-min and 30-min backward returns of all the three assets at $t = 1, . . . , T$. Create a dataframe with columns named in the form of Asset i BRet h, where $i \in {1, 2, 3}$ and $h \in {3, 10, 30}$, such that the column Asset i BRet h corresponds to the time series of the h-min backward returns of Asset i. The resulting dataframe should have 524,160 rows and 9 columns. Export this dataframe to a csv file named as bret.csv and submit it to OJ to verify its correctness. Please round all the entries of the dataframe to four decimal places; the maximum file size to upload is 40MB. (Hint: Vector/matrix-based calculation is much more efficient than loops in R.)
+
+```{r}
+# load data
+base_data <- read.csv('data/final_project-1.csv')
+
+# check for missing values
+sapply(base_data, function(x) sum(is.na(x)))
+```
+
+```{r}
+# using dplyr to calculate backward return
+bw_return <- base_data %>%
+  mutate(
+    Asset_1_BRet_3 = (Asset_1 - ifelse(X > 2, lag(Asset_1, n=3), Asset_1[1]))/ifelse(X > 2, lag(Asset_1, n=3), Asset_1[1]),
+    Asset_1_BRet_10 = (Asset_1 - ifelse(X > 9, lag(Asset_1, n=10), Asset_1[1]))/ifelse(X > 9, lag(Asset_1, n=10), Asset_1[1]),
+    Asset_1_BRet_30 = (Asset_1 - ifelse(X > 29, lag(Asset_1, n=30), Asset_1[1]))/ifelse(X > 29, lag(Asset_1, n=30), Asset_1[1]),
+    Asset_2_BRet_3 = (Asset_2 - ifelse(X > 2, lag(Asset_2, n=3), Asset_2[1]))/ifelse(X > 2, lag(Asset_2, n=3), Asset_2[1]),
+    Asset_2_BRet_10 = (Asset_2 - ifelse(X > 9, lag(Asset_2, n=10), Asset_2[1]))/ifelse(X > 9, lag(Asset_2, n=10), Asset_2[1]),
+    Asset_2_BRet_30 = (Asset_2 - ifelse(X > 29, lag(Asset_2, n=30), Asset_2[1]))/ifelse(X > 29, lag(Asset_2, n=30), Asset_2[1]),
+    Asset_3_BRet_3 = (Asset_3 - ifelse(X > 2, lag(Asset_3, n=3), Asset_3[1]))/ifelse(X > 2, lag(Asset_3, n=3), Asset_3[1]),
+    Asset_3_BRet_10 = (Asset_3 - ifelse(X > 9, lag(Asset_3, n=10), Asset_3[1]))/ifelse(X > 9, lag(Asset_3, n=10), Asset_3[1]),
+    Asset_3_BRet_30 = (Asset_3 - ifelse(X > 29, lag(Asset_3, n=30), Asset_3[1]))/ifelse(X > 29, lag(Asset_3, n=30), Asset_3[1]))
+
+# removing underlying asset prices and rounding to 4 decimal places
+bw_submit <- bw_return %>%
+  select(-c(X, Asset_1, Asset_2, Asset_3)) %>%
+  mutate_all(round, 4)
+
+# checking resulting data frame
+#head(new_data)
+#dim(new_data)
+
+# exporting data
+write.csv(bw_submit, "output/bret.csv", row.names = FALSE)
+```
+
+
+## Rolling correlation
+
+Given two times series $X = \{X_t\}_{1≤t≤T}$ and $Y = \{Y_t\}_{1≤t≤T}$, the $w$-min backward rolling correlation between $X$ and $Y$ at time $t_0$ is defined as
+
+$$ ρ_b(t_0, w) := \widehat{Cor}(\{X_t\}_{\max(t_0−w,1)≤t≤t_0}, \{Y_t\}_{\max(t_0−w,1)≤t≤t_0} ) $$
+
+where $\widehat{Cor}$ is the sample correlation. Calculate the (21 ∗ 24 ∗ 60)-minute (3 weeks) backward rolling correlation of 3-min backward returns of each pair of the three assets at $t = 1, 2, . . . , T$. Create a dataframe with column names in the form of Rho_i_j, which corresponds to the rolling correlation between Asset $i$ and Asset $j$, and where $i < j$. The resulting dataframe should have 524,160 rows and 3 columns. Export the dataframe to a csv file named as corr.csv, and submit it to our OJ to verify its correctness. Please round all the entries of the dataframe to four decimal places; the maximum file size to upload is 15MB.
+(Hint: The rolling correlation can be computed in an incremental manner, given that the rolling window is shifted by only one minute at each step.)
+
+```{r}
+
+```
+

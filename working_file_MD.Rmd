@@ -1,0 +1,39 @@
+---
+title: "Stats 415 - Final Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+final_project_1 <- read_csv("data/final_project-1.csv")
+```
+
+```{r}
+# Removing the index column
+final_project <- final_project_1 %>% select(Asset_1:Asset_3)
+
+# Defining the function
+h_min_br <- function(df, h){
+  data <- df
+  a <- h + 2
+  c <- h + 1
+  data[a:nrow(data),] <- data[2:(nrow(data)-h),]
+  data[1:c,] <- data[2,]
+  data <- (df - data)/data
+}
+# For h = 3
+h3 <- h_min_br(final_project, 3)
+# For h = 10
+h10 <- h_min_br(final_project, 10)
+# For h = 30
+h30 <- h_min_br(final_project, 30)
+# Combining them into one df
+Asset_i_BRet_h <- cbind(h3, h10, h30)
+# Renaming the columns
+colnames(Asset_i_BRet_h) <- c("Asset_1_BRet_3", "Asset_2_BRet_3", "Asset_3_BRet_3", "Asset_1_BRet_10", "Asset_2_BRet_10", "Asset_3_BRet_10", "Asset_1_BRet_30", "Asset_2_BRet_30", "Asset_3_BRet_30")
+# Writing the new df to a csv file
+write_csv(Asset_i_BRet_h, "output/bret_MD.csv")
+```
+
