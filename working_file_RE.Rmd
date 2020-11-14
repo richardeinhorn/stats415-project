@@ -31,9 +31,9 @@ The project has two parts: a basic part and an advanced part:
 
 Everyone within a team receives the same score for the final project and can submit results or code to the OJ for the entire team. Each OJ-graded problem allows THREE submissions per day per team, and only the highest score will be counted toward the grade. Therefore, please start early and exploit every opportunity to hit a higher score! During the final project, you will be updated with your team’s current ranking based on your state-of-the-art result every 24 hours.
 
-# Basic Part
+# 2 Basic Part
 
-## Backward returns
+## 2.1 Backward returns
 
 For any $t$, $h \in N_+$, define the $h$-min backward return at time $t$ as:
 
@@ -77,7 +77,7 @@ write.csv(bw_submit, "output/bret.csv", row.names = FALSE)
 ```
 
 
-## Rolling correlation
+## 2.2 Rolling correlation
 
 Given two times series $X = \{X_t\}_{1≤t≤T}$ and $Y = \{Y_t\}_{1≤t≤T}$, the $w$-min backward rolling correlation between $X$ and $Y$ at time $t_0$ is defined as
 
@@ -87,6 +87,87 @@ where $\widehat{Cor}$ is the sample correlation. Calculate the (21 ∗ 24 ∗ 60
 (Hint: The rolling correlation can be computed in an incremental manner, given that the rolling window is shifted by only one minute at each step.)
 
 ```{r}
+interval = 21*24*60
+rolling_cor <- bw_return %>%
+  select(c(X, Asset_1_BRet_3, Asset_2_BRet_3, Asset_3_BRet_3))
 
+for (i in 1:nrow(rolling_cor)) {
+  start = max(i - interval, 1)
+  rolling_cor$Rho_1_2[i] = cor(rolling_cor$Asset_1_BRet_3[start:i], rolling_cor$Asset_2_BRet_3[start:i])
+  rolling_cor$Rho_1_3[i] = cor(rolling_cor$Asset_1_BRet_3[start:i], rolling_cor$Asset_3_BRet_3[start:i])
+  rolling_cor$Rho_2_3[i] = cor(rolling_cor$Asset_2_BRet_3[start:i], rolling_cor$Asset_3_BRet_3[start:i])
+  if (i %% 10000 == 0) {paste(i, "rows completed.")}
+}
+
+rolling_submit <- rolling_cor %>%
+  select(c(Rho_1_2, Rho_1_3, Rho_2_3)) %>%
+  mutate_all(round, 4)
+
+# exporting data
+write.csv(rolling_submit, "output/corr.csv", row.names = FALSE)
+```
+
+## 2.5 Ridge and LASSO
+
+Consider backward returns in more time horizons. Calculate
+
+$$\{r_b(t, h)\}_{t∈[T],h \in \{3,10,30,60,120,180,240,360,480,600,720,960,1200,1440\}}$$
+
+for all the three assets. Use these returns as features to fit Ridge and LASSO regression to predict $r_f(t, 10)$ of Asset 1. Use the first 70% data as training data and the last 30% data as validation data. Use the validation MSE to seek the best tuning parameter in LASSO and Ridge, and generate the corresponding prediction for the whole year. Report the in-sample and out-of-sample correlation between your prediction and true response.
+
+### Backward returns
+```{r}
+bw_full = base_data
+
+time.horizons = c(3,10,30,60,120,180,240,360,480,600,720,960,1200,1440)
+
+for (time in time.horizons) {
+  bw_full = mutate(bw_full, "Asset_1_BRet_{time}" := (bw_full$Asset_1 - ifelse(X > (time-1), lag(bw_full$Asset_1, n=time), bw_full$Asset_1[1]))/ifelse(X > (time-1), lag(bw_full$Asset_1, n=time), bw_full$Asset_1[1]))
+  bw_full = mutate(bw_full, "Asset_2_BRet_{time}" := (bw_full$Asset_2 - ifelse(X > (time-1), lag(bw_full$Asset_2, n=time), bw_full$Asset_2[1]))/ifelse(X > (time-1), lag(bw_full$Asset_2, n=time), bw_full$Asset_2[1]))
+  bw_full = mutate(bw_full, "Asset_3_BRet_{time}" := (bw_full$Asset_3 - ifelse(X > (time-1), lag(bw_full$Asset_3, n=time), bw_full$Asset_3[1]))/ifelse(X > (time-1), lag(bw_full$Asset_3, n=time), bw_full$Asset_3[1]))
+}
+
+write.csv(bw_full, "output/bw_full.csv", row.names = FALSE)
+```
+
+## 2.6 Principle component regression (PCR)
+
+Run PCR with the same features and response as in Section 2.5. Use the first 70% data as training data and the last 30% data as validation data. Use the validation MSE to seek the optimal number of principal components to include in PCR and generate the corresponding prediction for the whole year. Report the in-sample and out-of-sample correlation between your prediction and true response.
+
+### Prepare data
+```{r}
+# import libraries
+library(pls)
+
+# prep data
+data_pcr <- bw_full[-c(1:4)]
+
+# splitting into test/train data sets
+set.seed(42)
+train_id <- sample(1:nrow(data_pcr), size=trunc(0.7*nrow(data_pcr)))
+
+# create matrix
+X <- model.matrix(Asset_1_BRet_10 ~ ., data = data_pcr)[,-1]
+
+## Principal Component Analysis (PCA)
+# run PCA after normalizing/standardizing variables (explanation below)
+returnPCA <- prcomp(x = X, center = T, scale = T)
+
+# scree plot of eigenvalues
+plot(returnPCA)
+
+## Principal Component Regression (PCR)
+# train model
+returnPCR <- pcr(Asset_1_BRet_10 ~ ., data = data_pcr, subset = train_id, scale = T, validation = "CV")
+
+# evaluate model
+summary(returnPCR)
+validationplot(returnPCR, val.type = "MSEP", legendpos = "topright")
+# 22 components collectively explain 95% of variance in response variable
+
+# test error on PCR using 22 principal components
+returnPCR.pred <- predict(returnPCR, data_pcr[-train_id, names(data_pcr) != 'Asset_1_BRet_10'], ncomp = 22)
+PCRTestMSE <- mean((returnPCR.pred - data_pcr[-train_id, 'Asset_1_BRet_10'])^2)
+PCRTestMSE
 ```
 
