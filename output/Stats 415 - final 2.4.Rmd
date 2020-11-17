@@ -1,0 +1,67 @@
+---
+title: "Stats 415 final - 2.4"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(readr)
+final_project_1 <- read_csv("~/Downloads/final_project-1.csv")
+final_project <- final_project_1 %>% select(Asset_1:Asset_3)
+```
+
+```{r}
+h_min_br <- function(df, h){
+  data <- df
+  a <- h + 2
+  c <- h + 1
+  data[a:nrow(data),] <- data[2:(nrow(data)-h),]
+  data[1:c,] <- data[2,]
+  data <- (df - data)/(data)
+}
+# Writing a new function to get the h-min forward return
+h_min_f <- function(df, h){
+  data <- df
+  a <- (nrow(df) - h)
+  b <- h + 1
+  c <- a + 1
+  d <- nrow(df)
+  data[c:d,] <- data[d,]
+  data[1:a,] <- data[b:d,]
+  data <- (data - df)/df
+}
+
+# Response vector
+rf_t10 <- h_min_f(final_project, 10)[,1]
+# Predictors
+# Using the h-min backward return from part 2.1
+rb_t3 <- h_min_br(final_project, 3)[,1]
+rb_t10 <- h_min_br(final_project, 10)[,1]
+rb_t30 <- h_min_br(final_project, 30)[,1]
+rb_df <- data.frame(rf_t10, rb_t3, rb_t10, rb_t30)
+# Splitting the dataframe into training and testing
+Train_rb <- rb_df[1:366912,]
+Test_rb <- rb_df[366913:524160,]
+
+library(FNN)
+K <- c(5,25,125,625,1000)
+testMSE <- c()
+for(i in 1:length(K)){
+  est <- knn.reg(train = Train_rb[,2:4], test = Test_rb[2:4], y = Train_rb$rf_t10, k = K[i])
+  testMSE[i] <- mean((est$pred - Test_rb$rf_t10)^2)
+}
+trainMSE <- c()
+for(i in 1:length(K)){
+  est <- knn.reg(train = Train_rb[,2:4], test = Train_rb[2:4], y = Train_rb$rf_t10, k = K[i])
+  trainMSE[i] <- mean((est$pred - Train_rb$rf_t10)^2)
+}
+# Plotting the test MSEs
+plot(K, testMSE, xlab = "K", ylab = "Testing MSE", main = "Testing MSE as a function of K", type = "l", col = "blue4")
+# Plotting the training MSEs
+plot(K, trainMSE, xlab = "K", ylab = "Training MSE", main = "Training MSE as a function of K", type = "l", col = "red4")
+Train_est <- knn.reg(train = Train_rb[,2:4], test = Train_rb[2:4], y = Train_rb$rf_t10, k = 1000)$pred
+Test_est <- knn.reg(train = Train_rb[,2:4], test = Test_rb[2:4], y = Train_rb$rf_t10, k = 1000)$pred
+cor(Test_est, Test_rb$rf_t10)
+cor(Train_est, Train_rb$rf_t10)
+```

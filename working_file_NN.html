@@ -368,6 +368,7 @@ summary {
 
 <pre class="r"><code># Removing the index column
 final_project &lt;- final_project %&gt;% select(Asset_1:Asset_3)
+Asset_1 &lt;- final_project %&gt;% select(Asset_1)
 
 # Defining the function
 h_min_br &lt;- function(df, h){
@@ -375,17 +376,75 @@ h_min_br &lt;- function(df, h){
   return((df - lag_df) / lag_df)
 }
 # For h = 3
-h3 &lt;- h_min_br(final_project, 3)
+# h3 &lt;- h_min_br(final_project, 3)
 # For h = 10
-h10 &lt;- h_min_br(final_project, 10)
+# h10 &lt;- h_min_br(final_project, 10)
 # For h = 30
-h30 &lt;- h_min_br(final_project, 30)
+# h30 &lt;- h_min_br(final_project, 30)
 # Combining them into one df
-Asset_i_BRet_h &lt;- cbind(h3, h10, h30)
+df &lt;- cbind(h_min_br(final_project, 3), h_min_br(final_project, 10), 
+                     h_min_br(final_project, 30))
 # Renaming the columns
-colnames(Asset_i_BRet_h) &lt;- c(&quot;Asset_1_BRet_3&quot;, &quot;Asset_2_BRet_3&quot;, &quot;Asset_3_BRet_3&quot;, &quot;Asset_1_BRet_10&quot;, &quot;Asset_2_BRet_10&quot;, &quot;Asset_3_BRet_10&quot;, &quot;Asset_1_BRet_30&quot;, &quot;Asset_2_BRet_30&quot;, &quot;Asset_3_BRet_30&quot;)
+colnames(df) &lt;- c(&quot;Asset_1_BRet_3&quot;, &quot;Asset_2_BRet_3&quot;, 
+                  &quot;Asset_3_BRet_3&quot;, &quot;Asset_1_BRet_10&quot;, 
+                  &quot;Asset_2_BRet_10&quot;, &quot;Asset_3_BRet_10&quot;, 
+                  &quot;Asset_1_BRet_30&quot;, &quot;Asset_2_BRet_30&quot;, 
+                  &quot;Asset_3_BRet_30&quot;)
 # Writing the new df to a csv file
-write_csv(Asset_i_BRet_h, &quot;output/bret_NN.csv&quot;)</code></pre>
+# write_csv(Asset_i_BRet_h, &quot;output/bret_NN.csv&quot;)</code></pre>
+<div id="linear-regression" class="section level2">
+<h2>2.3 Linear Regression</h2>
+<pre class="r"><code>Asset_1_lead &lt;- lead(Asset_1, n=10, default=tail(Asset_1, 1))
+Asset_1_HRet_10 &lt;- (Asset_1_lead - Asset_1) / Asset_1
+colnames(Asset_1_HRet_10) &lt;- c(&quot;Asset_1_HRet_10&quot;)
+df &lt;- cbind(df, Asset_1_HRet_10)
+
+train_size &lt;- floor(nrow(df) * 0.7)
+test_size &lt;- nrow(df) - train_size
+
+train_set &lt;- head(df, train_size)
+test_set &lt;- tail(df, test_size)
+
+lr_modl &lt;- lm(Asset_1_HRet_10 ~ Asset_1_BRet_3 + Asset_2_BRet_3 + Asset_3_BRet_3
+              , data=train_set)
+summary(lr_modl)</code></pre>
+<pre><code>## 
+## Call:
+## lm(formula = Asset_1_HRet_10 ~ Asset_1_BRet_3 + Asset_2_BRet_3 + 
+##     Asset_3_BRet_3, data = train_set)
+## 
+## Residuals:
+##       Min        1Q    Median        3Q       Max 
+## -0.147288 -0.000917  0.000011  0.000927  0.085485 
+## 
+## Coefficients:
+##                  Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)    -1.115e-05  4.760e-06  -2.341   0.0192 *  
+## Asset_1_BRet_3  6.714e-02  3.383e-03  19.843   &lt;2e-16 ***
+## Asset_2_BRet_3  2.983e-02  1.878e-03  15.888   &lt;2e-16 ***
+## Asset_3_BRet_3  2.134e-02  1.885e-03  11.323   &lt;2e-16 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## Residual standard error: 0.002883 on 366908 degrees of freedom
+## Multiple R-squared:  0.003444,   Adjusted R-squared:  0.003436 
+## F-statistic: 422.7 on 3 and 366908 DF,  p-value: &lt; 2.2e-16</code></pre>
+<pre class="r"><code>train_pred &lt;- predict.lm(lr_modl, train_set)
+test_pred &lt;- predict.lm(lr_modl, test_set)
+
+# In-sample correlation
+cor(as.matrix(cbind(train_pred, train_set$Asset_1_HRet_10)))</code></pre>
+<pre><code>##            train_pred           
+## train_pred 1.00000000 0.05868781
+##            0.05868781 1.00000000</code></pre>
+<pre class="r"><code># Out-sample correlation
+cor(as.matrix(cbind(test_pred, test_set$Asset_1_HRet_10)))</code></pre>
+<pre><code>##            test_pred           
+## test_pred 1.00000000 0.04335569
+##           0.04335569 1.00000000</code></pre>
+<pre class="r"><code># 3 Weeks Rolling correlation
+# for (i in 1:nrow(df)):</code></pre>
+</div>
 
 
 
