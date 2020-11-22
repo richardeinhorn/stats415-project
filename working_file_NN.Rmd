@@ -1,6 +1,8 @@
 ---
 title: "Stats 415 - Final Project"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -64,6 +66,13 @@ test_pred <- predict.lm(lr_modl, test_set)
 cor(as.matrix(cbind(train_pred, train_set$Asset_1_HRet_10)))
 # Out-sample correlation
 cor(as.matrix(cbind(test_pred, test_set$Asset_1_HRet_10)))
+
+train_pred <- data.frame(train_pred)
+test_pred <- data.frame(test_pred)
+colnames(train_pred) <- c("Asset_1_HRet_10_pred")
+colnames(test_pred) <- c("Asset_1_HRet_10_pred")
+Asset_1_HRet_10_lead <- rbind(train_pred, test_pred)
+df <- cbind(df, Asset_1_HRet_10_lead)
 
 # 3 Weeks Rolling correlation
 for (i in 1:nrow(df)) {
