@@ -44,6 +44,7 @@ colnames(df) <- c("Asset_1_BRet_3", "Asset_2_BRet_3",
 
 ## 2.3 Linear Regression
 ```{r}
+df <- read.csv("output/bret.csv")
 Asset_1_lead <- lead(Asset_1, n=10, default=tail(Asset_1, 1))
 Asset_1_HRet_10 <- (Asset_1_lead - Asset_1) / Asset_1
 colnames(Asset_1_HRet_10) <- c("Asset_1_HRet_10")
@@ -55,8 +56,7 @@ test_size <- nrow(df) - train_size
 train_set <- head(df, train_size)
 test_set <- tail(df, test_size)
 
-lr_modl <- lm(Asset_1_HRet_10 ~ Asset_1_BRet_3 + Asset_2_BRet_3 + Asset_3_BRet_3
-              , data=train_set)
+lr_modl <- lm(Asset_1_HRet_10 ~ ., data=train_set)
 summary(lr_modl)
 
 train_pred <- predict.lm(lr_modl, train_set)
