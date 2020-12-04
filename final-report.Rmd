@@ -1,0 +1,67 @@
+---
+title: "STATS 415 Final Project"
+author: "Margot Douillet, Richard Einhorn, Nathan Nguyen, Edmund Tian"
+date: "12/4/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+set.seed(42)
+```
+
+## 2.3 Linear Regression
+```{r}
+final_project <- read_csv("data/final_project-1.csv")
+# Removing the index column
+final_project <- final_project %>% select(Asset_1:Asset_3)
+Asset_1 <- final_project %>% select(Asset_1)
+df <- read.csv("output/bret.csv")
+Asset_1_lead <- lead(Asset_1, n=10, default=tail(Asset_1, 1))
+Asset_1_HRet_10 <- (Asset_1_lead - Asset_1) / Asset_1
+colnames(Asset_1_HRet_10) <- c("Asset_1_HRet_10")
+df <- cbind(df, Asset_1_HRet_10)
+
+train_size <- floor(nrow(df) * 0.7)
+test_size <- nrow(df) - train_size
+
+train_set <- head(df, train_size)
+test_set <- tail(df, test_size)
+
+lr_modl <- lm(Asset_1_HRet_10 ~ ., data=train_set)
+summary(lr_modl)
+```
+It seems that the 3, 10, and 30 minutes backward returns of Asset 2 and the 3 minutes backward return of Asset 3 are important in predicting the forward return of Asset 1.
+```{r}
+train_pred <- predict.lm(lr_modl, train_set)
+test_pred <- predict.lm(lr_modl, test_set)
+
+# In-sample correlation
+cor(as.matrix(cbind(train_pred, train_set$Asset_1_HRet_10)))
+sprintf("The in-sample correlation is %s", 
+        cor(as.matrix(cbind(train_pred, train_set$Asset_1_HRet_10)))[[2,1]])
+# Out-sample correlation
+cor(as.matrix(cbind(test_pred, test_set$Asset_1_HRet_10)))
+sprintf("The out-sample correlation is %s",
+        cor(as.matrix(cbind(test_pred, test_set$Asset_1_HRet_10)))[[2,1]])
+
+train_pred <- data.frame(train_pred)
+test_pred <- data.frame(test_pred)
+colnames(train_pred) <- c("Asset_1_HRet_10_pred")
+colnames(test_pred) <- c("Asset_1_HRet_10_pred")
+Asset_1_HRet_10_lead <- rbind(train_pred, test_pred)
+df <- cbind(df, Asset_1_HRet_10_lead)
+
+# 3 Weeks Rolling correlation
+for (i in 1:nrow(df)) {
+  start = max(i - 30240, 1)
+  df$Rho[i] = cor(df$Asset_1_HRet_10[start:i], df$Asset_1_HRet_10_pred[start:i])
+}
+plot(df$Rho, xlab="Time", ylab="Correlation", 
+     main="3 Weeks Rolling correlation between true and pred")
+```
+This correlation structure is unstable near the beginning of the year but is relatively stationary for the year. There are some fluctuations but the correlation seem to stay between 0 and 0.1.
