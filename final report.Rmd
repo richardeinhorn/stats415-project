@@ -14,7 +14,9 @@ library(dplyr)
 set.seed(42)
 ```
 
-## 2.3 Linear Regression
+This report presents our analysis and findings from building various models for the prediction task.
+
+# 2.3 Linear Regression
 ```{r}
 final_project <- read_csv("data/final_project-1.csv")
 # Removing the index column
@@ -35,7 +37,9 @@ test_set <- tail(df, test_size)
 lr_modl <- lm(Asset_1_HRet_10 ~ ., data=train_set)
 summary(lr_modl)
 ```
+
 It seems that the 3, 10, and 30 minutes backward returns of Asset 2 and the 3 minutes backward return of Asset 3 are important in predicting the forward return of Asset 1.
+
 ```{r}
 train_pred <- predict.lm(lr_modl, train_set)
 test_pred <- predict.lm(lr_modl, test_set)
@@ -64,14 +68,12 @@ for (i in 1:nrow(df)) {
 plot(df$Rho, xlab="Time", ylab="Correlation", 
      main="3 Weeks Rolling correlation between true and pred")
 ```
+
 This correlation structure is unstable near the beginning of the year but is relatively stationary for the year. There are some fluctuations but the correlation seem to stay between 0 and 0.1.
 
+# 2.4 KNN Regression
 
-
-
-## 2.4 KNN Regression
-
-Helper Functions
+## Helper Functions
 ```{r}
 # h-min backward return
 h_min_br <- function(df, h){
@@ -96,7 +98,7 @@ h_min_f <- function(df, h){
 }
 ```
 
-Creating Predictors, Testing and Training data
+## Creating Predictors, Testing and Training data
 ```{r}
 # Response vector
 rf_t10 <- h_min_f(final_project, 10)[,1]
@@ -111,7 +113,7 @@ Train_rb <- rb_df[1:366912,]
 Test_rb <- rb_df[366913:524160,]
 ```
 
-KNN Regression
+## KNN Regression
 ```{r}
 library(FNN)
 # The different K-values to be used
@@ -141,7 +143,7 @@ K[which.min(trainMSE)]
 K[which.min(testMSE)]
 ```
 
-Finding Training and Test estimates
+## Finding Training and Test estimates
 ```{r}
 # Performing KNN regression with K = 1000
 Train_est <- knn.reg(train = Train_rb[,2:4], test = Train_rb[2:4], y = Train_rb$rf_t10, k = 1000)$pred
@@ -152,4 +154,69 @@ Test_est <- knn.reg(train = Train_rb[,2:4], test = Test_rb[2:4], y = Train_rb$rf
 cor(Test_est, Test_rb$rf_t10)
 cor(Train_est, Train_rb$rf_t10)
 ```
-The correlation between the actual training response and the predicted training response is 0.083, while the correlation between the predicted test response and the actual test response is 0.029. 
+
+The correlation between the actual training response and the predicted training response is 0.083, while the correlation between the predicted test response and the actual test response is 0.029.
+
+# 2.5
+
+---------------------------------------------------------
+---------------------------------------------------------
+
+# 2.6 Principle component regression (PCR)
+
+## Task
+
+Run PCR with the same features and response as in Section 2.5. Use the first 70% data as training data and the last 30% data as validation data. Use the validation MSE to seek the optimal number of principal components to include in PCR and generate the corresponding prediction for the whole year. Report the in-sample and out-of-sample correlation between your prediction and true response.
+
+## Calculate backward returns
+```{r}
+data_pcr <- read_csv("data/final_project-1.csv")
+
+time.horizons = c(3,10,30,60,120,180,240,360,480,600,720,960,1200,1440)
+
+for (time in time.horizons) {
+  data_pcr = mutate(data_pcr, "Asset_1_BRet_{time}" := (data_pcr$Asset_1 - ifelse(X > (time-1), lag(data_pcr$Asset_1, n=time), data_pcr$Asset_1[1]))/ifelse(X > (time-1), lag(data_pcr$Asset_1, n=time), data_pcr$Asset_1[1]))
+  data_pcr = mutate(data_pcr, "Asset_2_BRet_{time}" := (data_pcr$Asset_2 - ifelse(X > (time-1), lag(data_pcr$Asset_2, n=time), data_pcr$Asset_2[1]))/ifelse(X > (time-1), lag(data_pcr$Asset_2, n=time), data_pcr$Asset_2[1]))
+  data_pcr = mutate(data_pcr, "Asset_3_BRet_{time}" := (data_pcr$Asset_3 - ifelse(X > (time-1), lag(data_pcr$Asset_3, n=time), data_pcr$Asset_3[1]))/ifelse(X > (time-1), lag(data_pcr$Asset_3, n=time), data_pcr$Asset_3[1]))
+}
+```
+
+## Prepare data
+```{r}
+# remove index column and underlying asset prices
+data_pcr <- data_pcr[,-c(1:4)]
+
+# splitting into test/train data sets
+set.seed(42)
+train_id <- sample(1:nrow(data_pcr), size=trunc(0.7*nrow(data_pcr)))
+
+# create matrix
+X <- model.matrix(Asset_1_BRet_10 ~ ., data = data_pcr)[,-1]
+```
+
+## Principal Component Analysis (not needed)
+```{r}
+## Principal Component Analysis (PCA)
+# run PCA after normalizing/standardizing variables (explanation below)
+returnPCA <- prcomp(x = X, center = T, scale = T)
+
+# scree plot of eigenvalues
+plot(returnPCA)
+```
+
+## Principal Component Regression (PCR)
+```{r}
+# train model without restrictions
+returnPCR <- pcr(Asset_1_BRet_10 ~ ., data = data_pcr, subset = train_id, scale = T, validation = "CV")
+
+# evaluate model
+summary(returnPCR)
+validationplot(returnPCR, val.type = "MSEP", legendpos = "topright")
+# 22 components collectively explain 95% of variance in response variable
+
+# test error on PCR using 22 principal components
+returnPCR.pred <- predict(returnPCR, data_pcr[-train_id, names(data_pcr) != 'Asset_1_BRet_10'], ncomp = 22)
+PCRTestMSE <- mean((returnPCR.pred - data_pcr[-train_id, 'Asset_1_BRet_10'])^2)
+paste("Test MSE for PCR", PCRTestMSE)
+```
+

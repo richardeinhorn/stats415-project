@@ -127,7 +127,7 @@ for (time in time.horizons) {
   bw_full = mutate(bw_full, "Asset_3_BRet_{time}" := (bw_full$Asset_3 - ifelse(X > (time-1), lag(bw_full$Asset_3, n=time), bw_full$Asset_3[1]))/ifelse(X > (time-1), lag(bw_full$Asset_3, n=time), bw_full$Asset_3[1]))
 }
 
-write.csv(bw_full, "output/bw_full.csv", row.names = FALSE)
+#write.csv(bw_full, "output/bw_full.csv", row.names = FALSE)
 ```
 
 ## 2.6 Principle component regression (PCR)
@@ -148,16 +148,21 @@ train_id <- sample(1:nrow(data_pcr), size=trunc(0.7*nrow(data_pcr)))
 
 # create matrix
 X <- model.matrix(Asset_1_BRet_10 ~ ., data = data_pcr)[,-1]
+```
 
+### Principal Component Analysis (not needed)
+```{r}
 ## Principal Component Analysis (PCA)
 # run PCA after normalizing/standardizing variables (explanation below)
 returnPCA <- prcomp(x = X, center = T, scale = T)
 
 # scree plot of eigenvalues
 plot(returnPCA)
+```
 
-## Principal Component Regression (PCR)
-# train model
+### Principal Component Regression (PCR)
+```{r}
+# train model without restrictions
 returnPCR <- pcr(Asset_1_BRet_10 ~ ., data = data_pcr, subset = train_id, scale = T, validation = "CV")
 
 # evaluate model
@@ -169,5 +174,293 @@ validationplot(returnPCR, val.type = "MSEP", legendpos = "topright")
 returnPCR.pred <- predict(returnPCR, data_pcr[-train_id, names(data_pcr) != 'Asset_1_BRet_10'], ncomp = 22)
 PCRTestMSE <- mean((returnPCR.pred - data_pcr[-train_id, 'Asset_1_BRet_10'])^2)
 PCRTestMSE
+```
+
+# Advanced Task
+
+### Prepare Prediction.R and model.Rdata for export
+```{r}
+# optimize for file size (remove 'validation = "CV"', reduce ncomps, remove ", subset = train_id")
+modl <- pcr(Asset_1_BRet_10 ~ ., data = data_pcr, scale = T, ncomp = 22)
+
+# 10 -> 28MB, 22 -> 60MB, 14 -> 39MB
+
+modl$model <- NULL
+modl$fitted.values <- NULL
+modl$residuals <- NULL
+modl$scores <- NULL
+
+save(modl, file = "workinprogress/model.Rdata")
+
+# test
+returnPCR.pred <- predict(modl, data_pcr[-train_id, names(data_pcr) != 'Asset_1_BRet_10'], ncomp = 22)
+PCRTestMSE <- mean((returnPCR.pred - data_pcr[-train_id, 'Asset_1_BRet_10'])^2)
+PCRTestMSE
+```
+
+## Linear Model
+
+### Simple Model using with $t \in \{3,10,30\}$
+```{r}
+# prepare data
+df <- read.csv("output/bret.csv")
+train_id <- sample(1:nrow(df), size=trunc(0.7*nrow(df)))
+
+# train linear model
+modl <- lm(Asset_1_BRet_10 ~ ., data=df, subset=train_id)
+summary(modl)
+
+# make predictions
+train.pred <- predict.lm(modl, df[train_id,])
+test.pred <- predict.lm(modl, df[-train_id,])
+
+# evaluate
+cor(train.pred, df[train_id, names(df) == "Asset_1_BRet_10"])
+cor(test.pred, df[-train_id, names(df) == "Asset_1_BRet_10"])
+
+# subset selection
+
+```
+
+### Complex Model
+```{r}
+# prepare data
+bw_full <- read.csv('data/final_project-1.csv')
+
+time.horizons = c(3,10,30,60,120,180,240,360,480,600,720,960,1200,1440)
+
+for (time in time.horizons) {
+  bw_full = mutate(bw_full, "Asset_1_BRet_{time}" := (bw_full$Asset_1 - ifelse(X > (time-1), lag(bw_full$Asset_1, n=time), bw_full$Asset_1[1]))/ifelse(X > (time-1), lag(bw_full$Asset_1, n=time), bw_full$Asset_1[1]))
+  bw_full = mutate(bw_full, "Asset_2_BRet_{time}" := (bw_full$Asset_2 - ifelse(X > (time-1), lag(bw_full$Asset_2, n=time), bw_full$Asset_2[1]))/ifelse(X > (time-1), lag(bw_full$Asset_2, n=time), bw_full$Asset_2[1]))
+  bw_full = mutate(bw_full, "Asset_3_BRet_{time}" := (bw_full$Asset_3 - ifelse(X > (time-1), lag(bw_full$Asset_3, n=time), bw_full$Asset_3[1]))/ifelse(X > (time-1), lag(bw_full$Asset_3, n=time), bw_full$Asset_3[1]))
+}
+
+bw_full <- bw_full[, -c(1:4)] # remove X and asset prices
+
+# train linear model
+modl.complex <- lm(Asset_1_BRet_10 ~ ., data=bw_full, subset=train_id)
+summary(modl.complex)
+
+# make predictions
+train.pred <- predict.lm(modl.complex, bw_full[train_id,])
+test.pred <- predict.lm(modl.complex, bw_full[-train_id,])
+
+# evaluate
+cor(train.pred, bw_full[train_id, names(bw_full) == "Asset_1_BRet_10"])
+cor(test.pred, bw_full[-train_id, names(bw_full) == "Asset_1_BRet_10"])
+```
+
+### Selective Model
+```{r}
+# prepare data
+bw_full <- read.csv('data/final_project-1.csv')
+
+time.horizons = c(3,10,30,60,120,180)
+
+for (time in time.horizons) {
+  bw_full = mutate(bw_full, "Asset_1_BRet_{time}" := (bw_full$Asset_1 - ifelse(X > (time-1), lag(bw_full$Asset_1, n=time), bw_full$Asset_1[1]))/ifelse(X > (time-1), lag(bw_full$Asset_1, n=time), bw_full$Asset_1[1]))
+  bw_full = mutate(bw_full, "Asset_2_BRet_{time}" := (bw_full$Asset_2 - ifelse(X > (time-1), lag(bw_full$Asset_2, n=time), bw_full$Asset_2[1]))/ifelse(X > (time-1), lag(bw_full$Asset_2, n=time), bw_full$Asset_2[1]))
+  bw_full = mutate(bw_full, "Asset_3_BRet_{time}" := (bw_full$Asset_3 - ifelse(X > (time-1), lag(bw_full$Asset_3, n=time), bw_full$Asset_3[1]))/ifelse(X > (time-1), lag(bw_full$Asset_3, n=time), bw_full$Asset_3[1]))
+}
+
+bw_full <- bw_full[, -c(1:4)] # remove X and asset prices
+
+# train linear model
+modl.complex <- lm(Asset_1_BRet_10 ~ ., data=bw_full, subset=train_id)
+summary(modl.complex)
+
+# make predictions
+train.pred <- predict.lm(modl.complex, bw_full[train_id,])
+test.pred <- predict.lm(modl.complex, bw_full[-train_id,])
+
+# evaluate
+cor(train.pred, bw_full[train_id, names(bw_full) == "Asset_1_BRet_10"])
+cor(test.pred, bw_full[-train_id, names(bw_full) == "Asset_1_BRet_10"])
+```
+
+
+### Selective Model with Interaction Terms
+```{r}
+# use data from above!
+
+# train linear model
+modl.complex <- lm(Asset_1_BRet_10 ~ . -
+                     Asset_3_BRet_60 -
+                     Asset_3_BRet_120 -
+                     Asset_3_BRet_180,
+                   data=bw_full, subset=train_id)
+summary(modl.complex)
+
+# make predictions
+train.pred <- predict.lm(modl.complex, bw_full[train_id,])
+test.pred <- predict.lm(modl.complex, bw_full[-train_id,])
+
+# evaluate
+cor(train.pred, bw_full[train_id, names(bw_full) == "Asset_1_BRet_10"])
+cor(test.pred, bw_full[-train_id, names(bw_full) == "Asset_1_BRet_10"])
+```
+
+[1] 0.756
+[1] 0.7689539
+
+# Plot
+```{r}
+graph.data <- bw_return[,c(1:4,6)]
+#graph.data <- df
+
+# BRet and HRet
+graph.data <- base_data %>%
+  mutate(
+    Asset_1_BRet_10 = (Asset_1 - ifelse(X > 9, lag(Asset_1, n=10), Asset_1[1]))/ifelse(X > 9, lag(Asset_1, n=10), Asset_1[1]),
+    Asset_2_BRet_10 = (Asset_2 - ifelse(X > 9, lag(Asset_2, n=10), Asset_2[1]))/ifelse(X > 9, lag(Asset_2, n=10), Asset_2[1]),
+    Asset_3_BRet_10 = (Asset_3 - ifelse(X > 9, lag(Asset_3, n=10), Asset_3[1]))/ifelse(X > 9, lag(Asset_3, n=10), Asset_3[1]),
+    Asset_1_HRet_10 = (ifelse(X < nrow(base_data)-9, lead(Asset_1, n=10), Asset_1[nrow(base_data)]) - Asset_1)/Asset_1
+  )
+graph.data <- graph.data[,-c(2:4)]
+
+plot(graph.data$X, graph.data$Asset_1_BRet_10, type = "l", col="red", ylim = c(min(graph.data[,-1], na.rm=T),max(graph.data[,-1], na.rm=T)), ylab= "Return", xlab="time (X)", main="Line graph 10min returns")
+lines(graph.data$X, graph.data$Asset_2_BRet_10, type = "l", col = "blue")
+lines(graph.data$X, graph.data$Asset_3_BRet_10, type = "l", col="green")
+lines(graph.data$X, graph.data$Asset_1_HRet_10, type = "l")
+legend("topright", legend=c("Asset_1_BRet_10", "Asset_2_BRet_10", "Asset_3_BRet_10", "Asset_1_HRet_10"),
+       col=c("red", "blue", "green", "black"), lty = 1, cex=0.8)
+
+
+
+
+
+
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+graph.data[,c(2:5)] <- lapply(graph.data[,c(2:5)], normalize)
+
+plot(graph.data$X, graph.data$Asset_1, type = "l", col="red", ylim = c(0,1), ylab= "Price (normalized)", xlab="time (X)", main="Line graph asset prices")
+lines(graph.data$X, graph.data$Asset_2, type = "l", col = "blue")
+lines(graph.data$X, graph.data$Asset_3, type = "l", col="green")
+lines(graph.data$X, graph.data$Asset_1_BRet_10, type = "l")
+legend("topright", legend=c("Asset 1", "Asset 2", "Asset 3", "BRet_1_10"),
+       col=c("red", "blue", "green", "black"), lty = 1, cex=0.8)
+```
+
+## Subset selection
+```{r}
+#library(leaps)
+
+# sample 50k observations
+#train_id <- sample(1:nrow(bw_full), 500000)
+
+#regfit.best.five = regsubsets(Asset_1_BRet_10 ~ ., data=bw_full[train_id,], nvmax = 15)
+regfit.best.five = regsubsets(Asset_1_BRet_10 ~ ., data=bw_full, nvmax = 18)
+
+regfit.Summary = summary(regfit.best.five)
+
+par(mfrow=c(2,2))
+## RSS
+plot(regfit.Summary$rss, xlab="Number of Variables", ylab="RSS",type="l", main = 'RSS')
+## Adjusted R-square
+plot(regfit.Summary$adjr2, xlab="Number of Variables", ylab="Adjusted RSq",type="l",
+main = 'Adjusted R-square')
+best_adjr2 = which.max(regfit.Summary$adjr2)
+abline(v=best_adjr2, lty = 2, col = 'red')
+## Mallow's Cp
+plot(regfit.Summary$cp, xlab="Number of Variables", ylab="Cp", type='l',
+main = 'Mallows Cp')
+best_cp = which.min(regfit.Summary$cp)
+abline(v=best_cp, lty = 2, col = 'red')
+## BIC
+plot(regfit.Summary$bic, xlab="Number of Variables", ylab="BIC", type='l',
+main = 'BIC')
+best_bic = which.min(regfit.Summary$bic)
+abline(v = best_bic, lty = 2, col = 'red')
+
+
+```
+
+## Moving average
+```{r}
+# define function that returns moving averages dataframe for {minutes}
+MA <- function(df, minutes) {
+  
+  # create data set with minutes*3 + 3 columns
+  for (minute in 1:minutes) {
+    # add lag for {minute} for all three assets and rename
+    colnames_old <- colnames(df)
+    df = cbind(df, lag(df[,1:3], n = minute))
+    colnames(df) <- c(colnames_old, paste("Asset_1_Lag_", minute, sep=''),
+                      paste("Asset_2_Lag_", minute, sep=''),
+                      paste("Asset_3_Lag_", minute, sep=''))
+  }
+  
+  # calculate moving average
+  MA_1 <- df %>% select(matches("Asset_1")) %>% mutate(Asset_1_MA = rowMeans(.))
+  MA_2 <- df %>% select(matches("Asset_2")) %>% mutate(Asset_2_MA = rowMeans(.))
+  MA_3 <- df %>% select(matches("Asset_3")) %>% mutate(Asset_3_MA = rowMeans(.))
+
+  MA_df <- as.data.frame(cbind(MA_1[,"Asset_1_MA"], MA_2[,"Asset_2_MA"], MA_3[,"Asset_3_MA"]))
+  colnames(MA_df) <- c("Asset_1_MA", "Asset_2_MA", "Asset_3_MA")
+  return(MA_df)
+}
+
+# get data set with 10-minute moving averages
+ma_data <- MA(base_data[,-1], 10)
+```
+
+
+
+
+### Another try
+```{r}
+# define function that returns moving averages dataframe for {minutes}
+MA <- function(df, minutes) {
+  
+  # create data set with minutes*3 + 3 columns
+  for (minute in 1:minutes) {
+    # add lag for {minute} for all three assets and rename
+    colnames_old <- colnames(df)
+    df = cbind(df, lag(df[,1:3], n = minute))
+    colnames(df) <- c(colnames_old, paste("Asset_1_Lag_", minute, sep=''),
+                      paste("Asset_2_Lag_", minute, sep=''),
+                      paste("Asset_3_Lag_", minute, sep=''))
+  }
+  
+  # calculate moving average
+  df <- df %>%
+    mutate(
+      Asset_1_MA = select(matches("Asset_1")) %>% rowMeans(na.rm=T),
+      Asset_2_MA = select(matches("Asset_2")) %>% rowMeans(na.rm=T),
+      Asset_3_MA = select(matches("Asset_3")) %>% rowMeans(na.rm=T)
+    )
+  return(df[,c("Asset_1_MA", "Asset_2_MA", "Asset_3_MA")])
+}
+
+ma_data <- MA(base_data[sample(1:nrow(base_data), 10000),-1], 10)
+```
+
+
+### workings from writing MA function
+```{r}
+
+df <- df %>%
+  mutate(
+    Asset_1_MA = select(matches("Asset_1")) %>% rowMeans(na.rm=T),
+    Asset_2_MA = select(matches("Asset_2")) %>% rowMeans(na.rm=T),
+    Asset_3_MA = select(matches("Asset_3")) %>% rowMeans(na.rm=T)
+  )
+
+
+df <- mutate(df, Asset_1_MA = select(df, matches("Asset_1")) %>% rowMeans(na.rm=T))
+
+
+as.data.frame(
+    "Asset_1_MA" = df %>% select(matches("Asset_1")) %>% summarise("Asset_1_MA" = mean(na.rm=T)),
+    "Asset_2_MA" = mean(select(df, matches("Asset_2"))),
+    "Asset_3_MA" = mean(select(df, matches("Asset_3")))
+  )
+
+#    df = cbind(df, mutate(df, "Asset_1_Lag_{minute}" := lag(df, n = minute))
+
+mutate(bw_full, "Asset_1_BRet_{time}" := (bw_full$Asset_1 - ifelse(X > (time-1), lag(bw_full$Asset_1, n=time), bw_full$Asset_1[1]))/ifelse(X > (time-1), lag(bw_full$Asset_1, n=time), bw_full$Asset_1[1]))
 ```
 
