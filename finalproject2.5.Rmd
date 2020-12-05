@@ -12,26 +12,16 @@ library(dplyr)
 
 setwd("/Users/Haoran_Tian/UMich/Courses/STAT 415")
 final_project <- read.csv("final_project-1.csv")
-
-
-
 final_project <- final_project %>% select(Asset_1:Asset_3)
 Asset_1 <- final_project %>% select(Asset_1)
-bw_full <- read.csv("Final\ Project/stats415-project/output/bret.csv")
-Asset_1_lead <- lead(Asset_1, n=10, default=tail(Asset_1, 1))
-Asset_1_HRet_10_forward <- (Asset_1_lead - Asset_1) / Asset_1
-colnames(Asset_1_HRet_10_forward) <- c("Asset_1_HRet_10_forward")
-bw_full <- cbind(bw_full, Asset_1_HRet_10_forward)
+
+
+
 ```
 
-
-bw_full = data.frame(bret)
-
-Ridge
-
 ```{r}
-
-
+#To calculate backward returns
+bw_full = data.frame(bret)
 time.horizons = c(3,10,30,60,120,180,240,360,480,600,720,960,1200,1440)
 
 for (time in time.horizons) {
@@ -45,8 +35,19 @@ bw_full <- bw_full[-c(1:4)]
 
 ```
 
+Ridge
+
 
 ``` {r }
+#Calculate forward returns and add the new variable Asset_1_HRet_10_forward to bw_full
+
+
+Asset_1_lead <- lead(Asset_1, n=10, default=tail(Asset_1, 1))
+Asset_1_BRet_10_forward <- (Asset_1_lead - Asset_1) / Asset_1
+colnames(Asset_1_BRet_10_forward) <- c("Asset_1_BRet_10_forward")
+bw_full <- cbind(bw_full, Asset_1_BRet_10_forward)
+
+
 train_size <- floor(nrow(bw_full) * 0.7)
 
 data_ridge_train <- bw_full[1: train_size,]
@@ -55,23 +56,23 @@ data_ridge_test <- bw_full[-(1:train_size),]
 set.seed(42)
 train_id <- sample(1:nrow(bw_full), size = trunc(nrow(bw_full)))
 
-X <- model.matrix(Asset_1_BRet_10 ~ ., data = data_ridge_train)
-X_train <- model.matrix(Asset_1_HRet_10_forward ~ ., data = data_ridge_train)
-X_test <- model.matrix(Asset_1_HRet_10_forward ~ ., data = data_ridge_test)
+X <- model.matrix(Asset_1_BRet_10_forward ~ ., data = bw_full)
+X_train <- model.matrix(Asset_1_BRet_10_forward ~ ., data = data_ridge_train)
+X_test <- model.matrix(Asset_1_BRet_10_forward ~ ., data = data_ridge_test)
 
 grid = 10^seq(10, -2, length = 100)
-ridge.mod = glmnet(x = X_train, y = data_ridge_train$Asset_1_HRet_10_forward, alpha = 0, lambda = grid)
+ridge.mod = glmnet(x = X_train, y = data_ridge_train$Asset_1_BRet_10_forward, alpha = 0, lambda = grid)
 plot(ridge.mod, xvar = "lambda",  label = TRUE )
 
 set.seed(1)
-cv.out = cv.glmnet(x = X_train, y = data_ridge_train$Asset_1_HRet_10_forward, alpha = 0, lambda = grid)
+cv.out = cv.glmnet(x = X_train, y = data_ridge_train$Asset_1_BRet_10_forward, alpha = 0, lambda = grid)
 bestlam = cv.out$lambda.min
 
 ridge.pred_train = predict(ridge.mod, s = bestlam, newx = X_train)
-mean((ridge.pred_train - data_ridge_train$Asset_1_HRet_10_forward)^2)
+mean((ridge.pred_train - data_ridge_train$Asset_1_BRet_10_forward)^2)
 
 ridge.pred_test = predict(ridge.mod, s = bestlam, newx = X_test)
-mean((ridge.pred_test - data_ridge_test$Asset_1_HRet_10_forward)^2)
+mean((ridge.pred_test - data_ridge_test$Asset_1_BRet_10_forward)^2)
 
 train_pred_ridge <- predict(ridge.mod, s = bestlam, newx =  X_train)
 test_pred_ridge <- predict(ridge.mod, s = bestlam, newx =  X_test)
@@ -85,26 +86,26 @@ Lasso
 ``` {r }
 
 
-lasso.mod = glmnet(x = X_train, y = data_ridge_train$Asset_1_HRet_10_forward, alpha = 1, lambda = grid)
+lasso.mod = glmnet(x = X_train, y = data_ridge_train$Asset_1_BRet_10_forward, alpha = 1, lambda = grid)
 par(mfrow = c(1,2))
 plot(lasso.mod)
 plot(lasso.mod, xvar = "lambda", label = TRUE)
 
 set.seed(1)
-cv.out_lasso = cv.glmnet(x = X_train, y = data_ridge_train$Asset_1_HRet_10_forward, alpha = 1, lambda = grid)
+cv.out_lasso = cv.glmnet(x = X_train, y = data_ridge_train$Asset_1_BRet_10_forward, alpha = 1, lambda = grid)
 bestlam_lasso = cv.out_lasso$lambda.min
 
 lasso.pred_train = predict(lasso.mod, s = bestlam_lasso, newx = X_train)
-mean((lasso.pred_train - data_ridge_train$Asset_1_HRet_10_forward)^2)
+mean((lasso.pred_train - data_ridge_train$Asset_1_BRet_10_forward)^2)
 
 lasso.pred_test = predict(lasso.mod, s = bestlam_lasso, newx = X_test)
-mean((lasso.pred_test - data_ridge_test$Asset_1_HRet_10_forward)^2)
+mean((lasso.pred_test - data_ridge_test$Asset_1_BRet_10_forward)^2)
 
 train_pred_lasso <- predict(lasso.mod, s = bestlam, newx =  X_train)
 test_pred_lasso <- predict(lasso.mod, s = bestlam, newx =  X_test)
 
 #In-sample correlation
-cor(as.matrix(cbind(train_pred_ridge, data_ridge_train$Asset_1_HRet_10_forward)))
+cor(as.matrix(cbind(train_pred_ridge, data_ridge_train$Asset_1_BRet_10_forward)))
 #Out-of-sample correlation
-cor(as.matrix(cbind(test_pred_ridge, data_ridge_test$Asset_1_HRet_10_forward)))
+cor(as.matrix(cbind(test_pred_ridge, data_ridge_test$Asset_1_BRet_10_forward)))
 ```
