@@ -1,0 +1,155 @@
+---
+title: "STATS 415 Final Project"
+author: "Margot Douillet, Richard Einhorn, Nathan Nguyen, Edmund Tian"
+date: "12/4/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+set.seed(42)
+```
+
+## 2.3 Linear Regression
+```{r}
+final_project <- read_csv("data/final_project-1.csv")
+# Removing the index column
+final_project <- final_project %>% select(Asset_1:Asset_3)
+Asset_1 <- final_project %>% select(Asset_1)
+df <- read.csv("output/bret.csv")
+Asset_1_lead <- lead(Asset_1, n=10, default=tail(Asset_1, 1))
+Asset_1_HRet_10 <- (Asset_1_lead - Asset_1) / Asset_1
+colnames(Asset_1_HRet_10) <- c("Asset_1_HRet_10")
+df <- cbind(df, Asset_1_HRet_10)
+
+train_size <- floor(nrow(df) * 0.7)
+test_size <- nrow(df) - train_size
+
+train_set <- head(df, train_size)
+test_set <- tail(df, test_size)
+
+lr_modl <- lm(Asset_1_HRet_10 ~ ., data=train_set)
+summary(lr_modl)
+```
+It seems that the 3, 10, and 30 minutes backward returns of Asset 2 and the 3 minutes backward return of Asset 3 are important in predicting the forward return of Asset 1.
+```{r}
+train_pred <- predict.lm(lr_modl, train_set)
+test_pred <- predict.lm(lr_modl, test_set)
+
+# In-sample correlation
+cor(as.matrix(cbind(train_pred, train_set$Asset_1_HRet_10)))
+sprintf("The in-sample correlation is %s", 
+        cor(as.matrix(cbind(train_pred, train_set$Asset_1_HRet_10)))[[2,1]])
+# Out-sample correlation
+cor(as.matrix(cbind(test_pred, test_set$Asset_1_HRet_10)))
+sprintf("The out-sample correlation is %s",
+        cor(as.matrix(cbind(test_pred, test_set$Asset_1_HRet_10)))[[2,1]])
+
+train_pred <- data.frame(train_pred)
+test_pred <- data.frame(test_pred)
+colnames(train_pred) <- c("Asset_1_HRet_10_pred")
+colnames(test_pred) <- c("Asset_1_HRet_10_pred")
+Asset_1_HRet_10_lead <- rbind(train_pred, test_pred)
+df <- cbind(df, Asset_1_HRet_10_lead)
+
+# 3 Weeks Rolling correlation
+for (i in 1:nrow(df)) {
+  start = max(i - 30240, 1)
+  df$Rho[i] = cor(df$Asset_1_HRet_10[start:i], df$Asset_1_HRet_10_pred[start:i])
+}
+plot(df$Rho, xlab="Time", ylab="Correlation", 
+     main="3 Weeks Rolling correlation between true and pred")
+```
+This correlation structure is unstable near the beginning of the year but is relatively stationary for the year. There are some fluctuations but the correlation seem to stay between 0 and 0.1.
+
+
+
+
+## 2.4 KNN Regression
+
+Helper Functions
+```{r}
+# h-min backward return
+h_min_br <- function(df, h){
+  data <- df
+  a <- h + 2
+  c <- h + 1
+  data[a:nrow(data),] <- data[2:(nrow(data)-h),]
+  data[1:c,] <- data[2,]
+  data <- (df - data)/(data)
+}
+
+# h-min forward return
+h_min_f <- function(df, h){
+  data <- df
+  a <- (nrow(df) - h)
+  b <- h + 1
+  c <- a + 1
+  d <- nrow(df)
+  data[c:d,] <- data[d,]
+  data[1:a,] <- data[b:d,]
+  data <- (data - df)/df
+}
+```
+
+Creating Predictors, Testing and Training data
+```{r}
+# Response vector
+rf_t10 <- h_min_f(final_project, 10)[,1]
+# Predictors
+# Using the h-min backward return from part 2.1
+rb_t3 <- h_min_br(final_project, 3)[,1]
+rb_t10 <- h_min_br(final_project, 10)[,1]
+rb_t30 <- h_min_br(final_project, 30)[,1]
+rb_df <- data.frame(rf_t10, rb_t3, rb_t10, rb_t30)
+# Splitting the dataframe into training and testing
+Train_rb <- rb_df[1:366912,]
+Test_rb <- rb_df[366913:524160,]
+```
+
+KNN Regression
+```{r}
+library(FNN)
+# The different K-values to be used
+K <- c(5,25,125,625,1000)
+# Finding the test MSE for each K
+testMSE <- c()
+for(i in 1:length(K)){
+  est <- knn.reg(train = Train_rb[,2:4], test = Test_rb[2:4], y = Train_rb$rf_t10, k = K[i])
+  testMSE[i] <- mean((est$pred - Test_rb$rf_t10)^2)
+}
+
+# Finding the training MSE for each K
+trainMSE <- c()
+for(i in 1:length(K)){
+  est <- knn.reg(train = Train_rb[,2:4], test = Train_rb[2:4], y = Train_rb$rf_t10, k = K[i])
+  trainMSE[i] <- mean((est$pred - Train_rb$rf_t10)^2)
+}
+
+# Plotting the test MSEs
+plot(K, testMSE, xlab = "K", ylab = "Testing MSE", main = "Testing MSE as a function of K", type = "l", col = "blue4")
+# Plotting the training MSEs
+plot(K, trainMSE, xlab = "K", ylab = "Training MSE", main = "Training MSE as a function of K", type = "l", col = "red4")
+
+# Finding the K value that yields the lowest training MSE
+K[which.min(trainMSE)]
+# Finding the K value that yields the lowest test MSE
+K[which.min(testMSE)]
+```
+
+Finding Training and Test estimates
+```{r}
+# Performing KNN regression with K = 1000
+Train_est <- knn.reg(train = Train_rb[,2:4], test = Train_rb[2:4], y = Train_rb$rf_t10, k = 1000)$pred
+
+Test_est <- knn.reg(train = Train_rb[,2:4], test = Test_rb[2:4], y = Train_rb$rf_t10, k = 1000)$pred
+
+# Finding the in-sample and out-of-sample correlations
+cor(Test_est, Test_rb$rf_t10)
+cor(Train_est, Train_rb$rf_t10)
+```
+The correlation between the actual training response and the predicted training response is 0.083, while the correlation between the predicted test response and the actual test response is 0.029. 
