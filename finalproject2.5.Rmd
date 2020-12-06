@@ -2,8 +2,12 @@
 title: "finalproject2.5"
 author: "Haoran Tian"
 date: "11/25/2020"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
+
+##2.5 Ridge and LASSO
 
 ```{r setup, include=FALSE}
 library(glmnet)
@@ -15,13 +19,13 @@ final_project <- read.csv("final_project-1.csv")
 final_project <- final_project %>% select(Asset_1:Asset_3)
 Asset_1 <- final_project %>% select(Asset_1)
 
-
-
 ```
 
+
 ```{r}
-#To calculate backward returns
-bw_full = data.frame(bret)
+#final solution for calculating backward returns
+
+bw_full <- read.csv("final_project-1.csv")
 time.horizons = c(3,10,30,60,120,180,240,360,480,600,720,960,1200,1440)
 
 for (time in time.horizons) {
@@ -35,13 +39,12 @@ bw_full <- bw_full[-c(1:4)]
 
 ```
 
-Ridge
+The backward returns in required time horizons are included in bw_full file. 
 
+#Ridge
 
 ``` {r }
-#Calculate forward returns and add the new variable Asset_1_HRet_10_forward to bw_full
-
-
+#Calculate forward returns and add the new variable
 Asset_1_lead <- lead(Asset_1, n=10, default=tail(Asset_1, 1))
 Asset_1_BRet_10_forward <- (Asset_1_lead - Asset_1) / Asset_1
 colnames(Asset_1_BRet_10_forward) <- c("Asset_1_BRet_10_forward")
@@ -56,9 +59,9 @@ data_ridge_test <- bw_full[-(1:train_size),]
 set.seed(42)
 train_id <- sample(1:nrow(bw_full), size = trunc(nrow(bw_full)))
 
-X <- model.matrix(Asset_1_BRet_10_forward ~ ., data = bw_full)
-X_train <- model.matrix(Asset_1_BRet_10_forward ~ ., data = data_ridge_train)
-X_test <- model.matrix(Asset_1_BRet_10_forward ~ ., data = data_ridge_test)
+X <- model.matrix(Asset_1_BRet_10_forward ~ ., data = bw_full)[, -1]
+X_train <- X[1: train_size,]
+X_test <- X[-(1: train_size),]
 
 grid = 10^seq(10, -2, length = 100)
 ridge.mod = glmnet(x = X_train, y = data_ridge_train$Asset_1_BRet_10_forward, alpha = 0, lambda = grid)
@@ -67,6 +70,7 @@ plot(ridge.mod, xvar = "lambda",  label = TRUE )
 set.seed(1)
 cv.out = cv.glmnet(x = X_train, y = data_ridge_train$Asset_1_BRet_10_forward, alpha = 0, lambda = grid)
 bestlam = cv.out$lambda.min
+bestlam
 
 ridge.pred_train = predict(ridge.mod, s = bestlam, newx = X_train)
 mean((ridge.pred_train - data_ridge_train$Asset_1_BRet_10_forward)^2)
@@ -74,12 +78,26 @@ mean((ridge.pred_train - data_ridge_train$Asset_1_BRet_10_forward)^2)
 ridge.pred_test = predict(ridge.mod, s = bestlam, newx = X_test)
 mean((ridge.pred_test - data_ridge_test$Asset_1_BRet_10_forward)^2)
 
-train_pred_ridge <- predict(ridge.mod, s = bestlam, newx =  X_train)
-test_pred_ridge <- predict(ridge.mod, s = bestlam, newx =  X_test)
+pred_ridge <- predict(ridge.mod, s = bestlam, newx =  X)
+
+
+
+sprintf("Forward return for rf (t, 10) of Asset 1 are included in pred_ridge. The best tuning parameter should be %s", bestlam)
+
+#In-sample correlation
+cor(as.matrix(cbind(ridge.pred_train, data_ridge_train$Asset_1_BRet_10_forward)))
+
+sprintf("The in-sample correlation is %s",
+cor(as.matrix(cbind(ridge.pred_train, data_ridge_train$Asset_1_BRet_10_forward)))[[2,1]])
+
+#Out-of-sample correlation
+cor(as.matrix(cbind(ridge.pred_test, data_ridge_test$Asset_1_BRet_10_forward)))
+
+sprintf("The out-of-sample correlation is %s",
+cor(as.matrix(cbind(ridge.pred_test, data_ridge_test$Asset_1_BRet_10_forward)))[[2,1]])
+
+
 ```
-
-
-
 
 Lasso
 
@@ -101,11 +119,20 @@ mean((lasso.pred_train - data_ridge_train$Asset_1_BRet_10_forward)^2)
 lasso.pred_test = predict(lasso.mod, s = bestlam_lasso, newx = X_test)
 mean((lasso.pred_test - data_ridge_test$Asset_1_BRet_10_forward)^2)
 
-train_pred_lasso <- predict(lasso.mod, s = bestlam, newx =  X_train)
-test_pred_lasso <- predict(lasso.mod, s = bestlam, newx =  X_test)
+pred_lasso <- predict(lasso.mod, s = bestlam, newx =  X)
+
+sprintf("Forward return for rf (t, 10) of Asset 1 are included in pred_lasso. The best tuning parameter should be %s", bestlam_lasso)
 
 #In-sample correlation
-cor(as.matrix(cbind(train_pred_ridge, data_ridge_train$Asset_1_BRet_10_forward)))
+cor(as.matrix(cbind(lasso.pred_train , data_ridge_train$Asset_1_BRet_10_forward)))
+
+sprintf("The in-sample correlation is %s",
+cor(as.matrix(cbind(lasso.pred_train , data_ridge_train$Asset_1_BRet_10_forward)))[[2,1]])
+
 #Out-of-sample correlation
-cor(as.matrix(cbind(test_pred_ridge, data_ridge_test$Asset_1_BRet_10_forward)))
+cor(as.matrix(cbind(lasso.pred_test, data_ridge_test$Asset_1_BRet_10_forward)))
+
+sprintf("The out-of-sample correlation is %s",
+cor(as.matrix(cbind(lasso.pred_test, data_ridge_test$Asset_1_BRet_10_forward)))[[2,1]])
 ```
+Both in-sample and out- of-sample correlation are not available since the standard deviation of lasso prediction is zero, because lasso shrink all coefficients to almost zero as evidenced in high lambda_lasso.
