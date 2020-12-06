@@ -168,9 +168,16 @@ The correlation between the actual training response and the predicted training 
 
 Run PCR with the same features and response as in Section 2.5. Use the first 70% data as training data and the last 30% data as validation data. Use the validation MSE to seek the optimal number of principal components to include in PCR and generate the corresponding prediction for the whole year. Report the in-sample and out-of-sample correlation between your prediction and true response.
 
-## Calculate backward returns
+## Load required libraries
 ```{r}
+library(pls)
+```
+
+
+## Calculate backward returns
+```{r, message=F, warning=F}
 data_pcr <- read_csv("data/final_project-1.csv")
+colnames(data_pcr) <- c("X", "Asset_1", "Asset_2", "Asset_3")
 
 time.horizons = c(3,10,30,60,120,180,240,360,480,600,720,960,1200,1440)
 
@@ -181,42 +188,63 @@ for (time in time.horizons) {
 }
 ```
 
+## Calculate response
+```{r}
+Asset_1 <- data_pcr %>% select(Asset_1)
+Asset_1_lead <- lead(Asset_1, n=10, default=tail(Asset_1, 1))
+Asset_1_HRet_10 <- (Asset_1_lead - Asset_1) / Asset_1
+colnames(Asset_1_HRet_10) <- c("Asset_1_HRet_10")
+data_pcr <- cbind(data_pcr, Asset_1_HRet_10)
+```
+
 ## Prepare data
 ```{r}
 # remove index column and underlying asset prices
 data_pcr <- data_pcr[,-c(1:4)]
 
-# splitting into test/train data sets
-set.seed(42)
-train_id <- sample(1:nrow(data_pcr), size=trunc(0.7*nrow(data_pcr)))
-
-# create matrix
-X <- model.matrix(Asset_1_BRet_10 ~ ., data = data_pcr)[,-1]
+# using first 70% as train data
+train_id <- 1:floor(nrow(data_pcr) * 0.7)
 ```
 
-## Principal Component Analysis (not needed)
-```{r}
-## Principal Component Analysis (PCA)
-# run PCA after normalizing/standardizing variables (explanation below)
-returnPCA <- prcomp(x = X, center = T, scale = T)
-
-# scree plot of eigenvalues
-plot(returnPCA)
-```
-
-## Principal Component Regression (PCR)
+## Train Principal Component Regression (PCR) Model
 ```{r}
 # train model without restrictions
-returnPCR <- pcr(Asset_1_BRet_10 ~ ., data = data_pcr, subset = train_id, scale = T, validation = "CV")
+returnPCR <- pcr(Asset_1_HRet_10 ~ ., data = data_pcr, subset = train_id, scale = T, validation = "CV")
 
 # evaluate model
 summary(returnPCR)
 validationplot(returnPCR, val.type = "MSEP", legendpos = "topright")
-# 22 components collectively explain 95% of variance in response variable
-
-# test error on PCR using 22 principal components
-returnPCR.pred <- predict(returnPCR, data_pcr[-train_id, names(data_pcr) != 'Asset_1_BRet_10'], ncomp = 22)
-PCRTestMSE <- mean((returnPCR.pred - data_pcr[-train_id, 'Asset_1_BRet_10'])^2)
-paste("Test MSE for PCR", PCRTestMSE)
 ```
+
+We find that 11 components collectively explain 95% of variance in response variable and that we get the lowest mean squared error of prediction (from 10-fold cross validation, adjusted) when using most or all of the 42 components. We can also test different values for ncomps with the training/test split we defined earlier:
+
+```{r}
+ncompss = 1:42
+cors <- vector(length = length(ncompss))
+for (i in 1:length(ncompss)) {
+  returnPCR.pred.test <- predict(returnPCR, data_pcr[-train_id, names(data_pcr) != 'Asset_1_HRet_10'], ncomp = ncompss[i])
+  cors[i] <- cor(returnPCR.pred.test, data_pcr[-train_id, names(data_pcr) == 'Asset_1_HRet_10'])
+}
+paste("Highest out-of-sample correlation for PCR:", round(max(cors),4), "(for", which.max(cors), "components)")
+```
+
+Based on the CV and the test error - and mindful of the computational cost of our prediction - we decided to go with a relatively simple principal component regression model that used six components. 
+
+## Evaluate Model
+```{r}
+# predict train data using PCR with 22 principal components
+returnPCR.pred.train <- predict(returnPCR, data_pcr[train_id, names(data_pcr) != 'Asset_1_HRet_10'], ncomp = 6)
+
+# Calculate in-sample correlation
+PCR.cor.train <- cor(returnPCR.pred.train, data_pcr[train_id, names(data_pcr) == 'Asset_1_HRet_10'])
+paste("In-sample correlation for PCR:", round(PCR.cor.train,4))
+
+# predict test data using PCR with 22 principal components
+returnPCR.pred.test <- predict(returnPCR, data_pcr[-train_id, names(data_pcr) != 'Asset_1_HRet_10'], ncomp = 6)
+
+# Calculate out-of-sample correlation
+PCR.cor.test <- cor(returnPCR.pred.test, data_pcr[-train_id, names(data_pcr) == 'Asset_1_HRet_10'])
+paste("Out-of-sample correlation for PCR:", round(PCR.cor.test,4))
+```
+
 
